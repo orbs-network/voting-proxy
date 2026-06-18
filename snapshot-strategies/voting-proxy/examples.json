@@ -1,0 +1,25 @@
+[
+  {
+    "name": "ERC-20 voting power through voting proxy",
+    "strategy": {
+      "name": "voting-proxy",
+      "params": {
+        "sourceMethod": "source",
+        "strategies": [
+          {
+            "name": "erc20-balance-of",
+            "network": "1",
+            "params": {
+              "address": "0xToken",
+              "symbol": "TOKEN",
+              "decimals": 18
+            }
+          }
+        ]
+      }
+    },
+    "network": "1",
+    "addresses": ["0xVotingProxy"],
+    "snapshot": 15210123
+  }
+]
