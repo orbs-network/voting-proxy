@@ -16,7 +16,7 @@ interface IVotingProxy {
 /// @notice ERC-1271 Snapshot voting proxy whose voting-power source is the current owner.
 contract VotingProxy is IVotingProxy, Ownable2Step {
     bytes4 private constant ERC1271_MAGIC_VALUE = bytes4(keccak256("isValidSignature(bytes32,bytes)"));
-    bytes4 private constant ERC1271_INVALID_VALUE = 0xffffffff;
+    bytes4 private constant ERC1271_INVALID_VALUE = bytes4(type(uint32).max);
 
     mapping(bytes32 hash => bool approved) public votes;
 

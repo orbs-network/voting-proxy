@@ -6,7 +6,7 @@ import {VotingProxy} from "../src/VotingProxy.sol";
 
 contract VotingProxyTest is Test {
     bytes4 private constant ERC1271_MAGIC_VALUE = bytes4(keccak256("isValidSignature(bytes32,bytes)"));
-    bytes4 private constant ERC1271_INVALID_VALUE = 0xffffffff;
+    bytes4 private constant ERC1271_INVALID_VALUE = bytes4(type(uint32).max);
 
     address private source = makeAddr("source");
     address private newOwner = makeAddr("newOwner");
