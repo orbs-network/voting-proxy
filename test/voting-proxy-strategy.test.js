@@ -8,11 +8,14 @@ import {
   strategy
 } from '../snapshot-strategies/voting-proxy/index.js';
 
-const proxy = '0x1111111111111111111111111111111111111111';
-const direct = '0x1000000000000000000000000000000000000000';
-const source = '0x2222222222222222222222222222222222222222';
+const proxy = address('11');
+const direct = address('10');
+const source = address('22');
 const encodedSource = `0x${'0'.repeat(24)}${source.slice(2)}`;
-const strategyWithFixtures = createVotingProxyStrategy(async () => ({ strategy: fixedScoreStrategy }));
+
+function address(byte) {
+  return `0x${byte.repeat(20)}`;
+}
 
 describe('voting-proxy strategy source resolution', () => {
   it('decodes ABI encoded address results', () => {
@@ -37,7 +40,7 @@ describe('voting-proxy strategy source resolution', () => {
   });
 
   it('keeps resolved sources and drops unresolved sources in the same batch', async () => {
-    const unresolvedProxy = '0x3333333333333333333333333333333333333333';
+    const unresolvedProxy = address('33');
     const provider = {
       async call(tx) {
         return tx.to === proxy ? encodedSource : '0x1234';
@@ -102,14 +105,14 @@ describe('voting-proxy strategy source resolution', () => {
   });
 
   it('runs inner strategies before and after resolving proxy sources', async () => {
-    globalThis.__fixedScoreCalls = [];
+    const fixture = createFixedScoreFixture();
     const provider = {
       async call() {
         return encodedSource;
       }
     };
 
-    const result = await strategyWithFixtures(
+    const result = await fixture.strategy(
       'space',
       '1',
       provider,
@@ -132,17 +135,17 @@ describe('voting-proxy strategy source resolution', () => {
     );
 
     assert.deepEqual(result, { [direct]: 7, [proxy]: 12 });
-    assert.deepEqual(globalThis.__fixedScoreCalls, [
+    assert.deepEqual(fixture.calls, [
       { addresses: [direct, proxy], network: '2', snapshot: 123 },
       { addresses: [source], network: '2', snapshot: 123 }
     ]);
   });
 
   it('sums multiple configured inner strategies', async () => {
-    globalThis.__fixedScoreCalls = [];
+    const fixture = createFixedScoreFixture();
 
     assert.deepEqual(
-      await strategyWithFixtures(
+      await fixture.strategy(
         'space',
         '1',
         {},
@@ -171,10 +174,10 @@ describe('voting-proxy strategy source resolution', () => {
   });
 
   it('defaults inner strategy network and params', async () => {
-    globalThis.__fixedScoreCalls = [];
+    const fixture = createFixedScoreFixture();
 
     assert.deepEqual(
-      await strategyWithFixtures(
+      await fixture.strategy(
         'space',
         '1',
         {},
@@ -186,23 +189,23 @@ describe('voting-proxy strategy source resolution', () => {
       ),
       { [direct]: 0 }
     );
-    assert.deepEqual(globalThis.__fixedScoreCalls, [{ addresses: [direct], network: '1', snapshot: 123 }]);
+    assert.deepEqual(fixture.calls, [{ addresses: [direct], network: '1', snapshot: 123 }]);
   });
 });
 
-async function fixedScoreStrategy(
-  _space,
-  network,
-  _provider,
-  addresses,
-  params,
-  snapshot
-) {
-  const calls = globalThis.__fixedScoreCalls ?? [];
-  calls.push({ addresses, network, snapshot });
-  globalThis.__fixedScoreCalls = calls;
+function createFixedScoreFixture() {
+  const calls = [];
 
-  return Object.fromEntries(
-    addresses.map((address) => [address, Number(params.scores?.[address.toLowerCase()] ?? 0)])
-  );
+  return {
+    calls,
+    strategy: createVotingProxyStrategy(async () => ({
+      strategy: async (_space, network, _provider, addresses, params = {}, snapshot) => {
+        calls.push({ addresses, network, snapshot });
+
+        return Object.fromEntries(
+          addresses.map((address) => [address, Number(params.scores?.[address.toLowerCase()] ?? 0)])
+        );
+      }
+    }))
+  };
 }

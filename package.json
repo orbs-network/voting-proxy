@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "forge build && node --check snapshot-strategies/voting-proxy/index.js && node --check snapshot-strategies/voting-proxy/proxyScoring.js && node --check scripts/submit-vote.mjs",
+    "build": "forge build && node --check snapshot-strategies/voting-proxy/index.js && node --check snapshot-strategies/voting-proxy/proxyScoring.js",
     "test": "forge test && npm run test:strategy",
     "test:strategy": "node --test test/*.test.js",
     "coverage": "forge coverage --report summary && node --experimental-test-coverage --test test/*.test.js"

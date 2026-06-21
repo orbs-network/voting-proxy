@@ -8,10 +8,14 @@ import {
   sourceAddressesToScore
 } from '../snapshot-strategies/voting-proxy/proxyScoring.js';
 
-const direct = '0x1000000000000000000000000000000000000000';
-const source = '0x2000000000000000000000000000000000000000';
-const proxyHigh = '0x3000000000000000000000000000000000000000';
-const proxyLow = '0x1111111111111111111111111111111111111111';
+const direct = address('10');
+const source = address('20');
+const proxyHigh = address('30');
+const proxyLow = address('11');
+
+function address(byte) {
+  return `0x${byte.repeat(20)}`;
+}
 
 describe('voting-proxy score remapping', () => {
   it('keeps normal voter scores unchanged', () => {

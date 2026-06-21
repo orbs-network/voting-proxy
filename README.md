@@ -43,7 +43,7 @@ Minimal behavior:
 1. Create Snapshot vote typed data with `from = VotingProxy`.
 2. Compute the Snapshot EIP-712 hash.
 3. Owner approves `VotingProxy.vote(hash)` through its normal signing or multisig flow.
-4. Submit the vote to Snapshot with `address = VotingProxy` and `sig = "0x"`.
+4. Submit the vote with `address = VotingProxy` and `sig = "0x"`.
 5. Snapshot calls `isValidSignature(hash, 0x)`.
 6. Snapshot strategy gives `VotingProxy` the voting power of `source()`.
 
@@ -90,37 +90,3 @@ If multiple voters resolve to the same `source()`:
 2. Snapshot must treat the strategy as dependent on other addresses.
 3. The proxy must exist before the proposal snapshot block.
 4. The submitted Snapshot typed data must match the approved hash exactly.
-
-## 📬 Submit Envelope
-
-```json
-{
-  "address": "0xVotingProxy",
-  "sig": "0x",
-  "data": {
-    "domain": { "name": "snapshot", "version": "0.1.4" },
-    "types": {
-      "Vote": [
-        { "name": "from", "type": "string" },
-        { "name": "space", "type": "string" },
-        { "name": "timestamp", "type": "uint64" },
-        { "name": "proposal", "type": "string" },
-        { "name": "choice", "type": "uint32" },
-        { "name": "reason", "type": "string" },
-        { "name": "app", "type": "string" },
-        { "name": "metadata", "type": "string" }
-      ]
-    },
-    "message": {
-      "from": "0xVotingProxy",
-      "space": "example.eth",
-      "timestamp": 0,
-      "proposal": "0x...",
-      "choice": 1,
-      "reason": "",
-      "app": "voting-proxy",
-      "metadata": "{}"
-    }
-  }
-}
-```
