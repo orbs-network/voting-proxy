@@ -6,10 +6,10 @@ import {VotingProxy} from "../src/VotingProxy.sol";
 
 contract DeployVotingProxy is Script {
     function run() external returns (VotingProxy proxy) {
-        address source = vm.envAddress("SOURCE_ADDRESS");
+        address owner = vm.envAddress("OWNER");
 
         vm.startBroadcast();
-        proxy = new VotingProxy(source);
+        proxy = new VotingProxy(owner);
         vm.stopBroadcast();
     }
 }

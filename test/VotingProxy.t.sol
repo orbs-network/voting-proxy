@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import {Test} from "forge-std/Test.sol";
 import {VotingProxy} from "../src/VotingProxy.sol";
+import {Test} from "forge-std/Test.sol";
 
 contract VotingProxyTest is Test {
     bytes4 private constant ERC1271_MAGIC_VALUE = bytes4(keccak256("isValidSignature(bytes32,bytes)"));
     bytes4 private constant ERC1271_INVALID_VALUE = bytes4(type(uint32).max);
+    bytes4 private constant TRANSFER_OWNERSHIP_SELECTOR = bytes4(keccak256("transferOwnership(address)"));
+    bytes4 private constant ACCEPT_OWNERSHIP_SELECTOR = bytes4(keccak256("acceptOwnership()"));
+    bytes4 private constant RENOUNCE_OWNERSHIP_SELECTOR = bytes4(keccak256("renounceOwnership()"));
+    bytes4 private constant PENDING_OWNER_SELECTOR = bytes4(keccak256("pendingOwner()"));
 
     address private source = makeAddr("source");
     address private newOwner = makeAddr("newOwner");
@@ -18,8 +22,8 @@ contract VotingProxyTest is Test {
     VotingProxy private proxy;
 
     event Vote(bytes32 indexed hash);
-    error OwnableInvalidOwner(address owner);
-    error OwnableUnauthorizedAccount(address account);
+    error InvalidOwner(address owner);
+    error UnauthorizedAccount(address account);
 
     function setUp() public {
         proxy = new VotingProxy(source);
@@ -31,7 +35,7 @@ contract VotingProxyTest is Test {
     }
 
     function testRejectsZeroInitialOwner() public {
-        vm.expectRevert(abi.encodeWithSelector(OwnableInvalidOwner.selector, address(0)));
+        vm.expectRevert(abi.encodeWithSelector(InvalidOwner.selector, address(0)));
         new VotingProxy(address(0));
     }
 
@@ -65,43 +69,42 @@ contract VotingProxyTest is Test {
     }
 
     function testOnlyOwnerCanApproveVoteHash() public {
-        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(UnauthorizedAccount.selector, stranger));
 
         vm.prank(stranger);
         proxy.vote(voteHash);
     }
 
-    function testOwnershipTransfersInTwoStepsAndSourceFollowsOwner() public {
-        vm.prank(source);
-        proxy.transferOwnership(newOwner);
+    function testOwnerAndSourceAreImmutableAndOwnerManagementAbiIsAbsent() public {
+        assertEq(proxy.owner(), source);
+        assertEq(proxy.source(), source);
+
+        assertSelectorRevertsFrom(source, abi.encodeWithSelector(TRANSFER_OWNERSHIP_SELECTOR, newOwner));
+        assertSelectorRevertsFrom(newOwner, abi.encodeWithSelector(ACCEPT_OWNERSHIP_SELECTOR));
+        assertSelectorRevertsFrom(source, abi.encodeWithSelector(RENOUNCE_OWNERSHIP_SELECTOR));
+        assertSelectorRevertsFrom(stranger, abi.encodeWithSelector(PENDING_OWNER_SELECTOR));
 
         assertEq(proxy.owner(), source);
         assertEq(proxy.source(), source);
-        assertEq(proxy.pendingOwner(), newOwner);
-
-        vm.prank(newOwner);
-        proxy.acceptOwnership();
-
-        assertEq(proxy.owner(), newOwner);
-        assertEq(proxy.source(), newOwner);
-        assertEq(proxy.pendingOwner(), address(0));
     }
 
-    function testPreviousOwnerCannotApproveAfterOwnershipTransfer() public {
-        vm.prank(source);
-        proxy.transferOwnership(newOwner);
+    function testOnlyImmutableOwnerCanApproveVoteHash() public {
+        assertSelectorRevertsFrom(source, abi.encodeWithSelector(TRANSFER_OWNERSHIP_SELECTOR, newOwner));
 
+        vm.expectRevert(abi.encodeWithSelector(UnauthorizedAccount.selector, newOwner));
         vm.prank(newOwner);
-        proxy.acceptOwnership();
-
-        vm.expectRevert(abi.encodeWithSelector(OwnableUnauthorizedAccount.selector, source));
+        proxy.vote(voteHash);
 
         vm.prank(source);
         proxy.vote(voteHash);
 
-        vm.prank(newOwner);
-        proxy.vote(voteHash);
+        assertEq(proxy.isValidSignature(voteHash, hex""), ERC1271_MAGIC_VALUE);
+    }
 
-        assertTrue(proxy.votes(voteHash));
+    function assertSelectorRevertsFrom(address caller, bytes memory callData) private {
+        vm.prank(caller);
+        (bool success,) = address(proxy).call(callData);
+
+        assertFalse(success);
     }
 }

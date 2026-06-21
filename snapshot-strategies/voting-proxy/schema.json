@@ -23,7 +23,7 @@
               "network": { "type": "string" },
               "params": { "type": "object" }
             },
-            "required": ["name", "params"],
+            "required": ["name"],
             "additionalProperties": false
           }
         }

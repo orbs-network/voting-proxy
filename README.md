@@ -17,6 +17,7 @@ For older multisigs that cannot implement ERC-1271, upgrade, or move their votin
 interface IVotingProxy {
     event Vote(bytes32 indexed hash);
 
+    function owner() external view returns (address);
     function source() external view returns (address);
     function vote(bytes32 hash) external;
     function isValidSignature(bytes32 hash, bytes calldata sig) external view returns (bytes4);
@@ -25,10 +26,10 @@ interface IVotingProxy {
 
 Minimal behavior:
 
-1. `VotingProxy` inherits OpenZeppelin `Ownable2Step`.
-2. `source()` returns `owner()`.
-3. `vote(hash)` is callable only by `owner()`.
-4. Ownership transfer uses `transferOwnership(newOwner)` and `acceptOwnership()`.
+1. `owner` is immutable and set in the constructor.
+2. `source()` returns `owner`.
+3. `vote(hash)` is callable only by `owner`.
+4. Ownership cannot be transferred or renounced.
 5. `isValidSignature(hash, 0x)` returns `0x1626ba7e` only if `hash` was approved.
 6. `vote(hash)` emits `Vote(hash)`.
 
@@ -36,7 +37,7 @@ Minimal behavior:
 
 1. `owner` approves vote hashes.
 2. `owner` provides voting power through `source()`.
-3. The constructor `source` argument sets the initial owner.
+3. The constructor `owner` argument sets the only owner.
 
 ## 🔁 Flow
 
