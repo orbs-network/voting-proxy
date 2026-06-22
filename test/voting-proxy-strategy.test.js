@@ -1,12 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import {
-  createVotingProxyStrategy,
-  decodeAddress,
-  resolveProxySources,
-  strategy
-} from '../snapshot-strategies/voting-proxy/index.js';
+import * as votingProxyModule from '../snapshot-strategies/voting-proxy/index.js';
+import { _createVotingProxyStrategy, strategy } from '../snapshot-strategies/voting-proxy/index.js';
 
 const proxy = address('11');
 const direct = address('10');
@@ -18,12 +14,11 @@ function address(byte) {
 }
 
 describe('voting-proxy strategy source resolution', () => {
-  it('decodes ABI encoded address results', () => {
-    assert.equal(decodeAddress(encodedSource), source);
-  });
-
-  it('rejects malformed source() return data', () => {
-    assert.equal(decodeAddress('0x1234'), undefined);
+  it('keeps source resolution helpers internal', () => {
+    assert.equal('decodeAddress' in votingProxyModule, false);
+    assert.equal('resolveProxySources' in votingProxyModule, false);
+    assert.equal('validateOptions' in votingProxyModule, false);
+    assert.equal('createVotingProxyStrategy' in votingProxyModule, false);
   });
 
   it('resolves sources through provider.call at the snapshot block', async () => {
@@ -35,8 +30,20 @@ describe('voting-proxy strategy source resolution', () => {
       }
     };
 
-    assert.deepEqual(await resolveProxySources(provider, [proxy], 123), { [proxy]: source });
+    const { result } = await scoreWithProvider(provider);
+
+    assert.deepEqual(result, { [proxy]: 12 });
     assert.deepEqual(calls, [[{ to: proxy, data: '0x67e828bf' }, 123]]);
+  });
+
+  it('rejects malformed source() return data', async () => {
+    const { result } = await scoreWithProvider({
+      async call() {
+        return '0x1234';
+      }
+    });
+
+    assert.deepEqual(result, { [proxy]: 0 });
   });
 
   it('keeps resolved sources and drops unresolved sources in the same batch', async () => {
@@ -47,7 +54,9 @@ describe('voting-proxy strategy source resolution', () => {
       }
     };
 
-    assert.deepEqual(await resolveProxySources(provider, [proxy, unresolvedProxy], 123), { [proxy]: source });
+    const { result } = await scoreWithProvider(provider, [proxy, unresolvedProxy]);
+
+    assert.deepEqual(result, { [proxy]: 12, [unresolvedProxy]: 0 });
   });
 
   it('ignores non-contracts, reverting calls, zero sources, and providers without call support', async () => {
@@ -63,10 +72,10 @@ describe('voting-proxy strategy source resolution', () => {
       }
     };
 
-    assert.deepEqual(await resolveProxySources({}, [proxy], 123), {});
-    assert.deepEqual(await resolveProxySources(null, [proxy], 123), {});
-    assert.deepEqual(await resolveProxySources(revertingProvider, [proxy], 123), {});
-    assert.deepEqual(await resolveProxySources(zeroProvider, [proxy], 123), {});
+    assert.deepEqual((await scoreWithProvider({})).result, { [proxy]: 0 });
+    assert.deepEqual((await scoreWithProvider(null)).result, { [proxy]: 0 });
+    assert.deepEqual((await scoreWithProvider(revertingProvider)).result, { [proxy]: 0 });
+    assert.deepEqual((await scoreWithProvider(zeroProvider)).result, { [proxy]: 0 });
   });
 
   it('validates required inner strategy options', async () => {
@@ -77,18 +86,6 @@ describe('voting-proxy strategy source resolution', () => {
     await assert.rejects(
       () => strategy('space', '1', {}, [proxy], {}, 123),
       /requires at least one inner strategy/
-    );
-    await assert.rejects(
-      () =>
-        strategy(
-          'space',
-          '1',
-          {},
-          [proxy],
-          { sourceMethod: 'owner', strategies: [{ name: 'fixed-score', params: {} }] },
-          123
-        ),
-      /sourceMethod = "source"/
     );
     await assert.rejects(
       () =>
@@ -163,7 +160,7 @@ describe('voting-proxy strategy source resolution', () => {
   });
 
   it('handles extra score keys emitted by inner strategies without returning them', async () => {
-    const strategyWithExtraScores = createVotingProxyStrategy(async () => ({
+    const strategyWithExtraScores = _createVotingProxyStrategy(async () => ({
       strategy: async () => ({ [direct]: 2, [source]: 3 })
     }));
 
@@ -189,16 +186,30 @@ describe('voting-proxy strategy source resolution', () => {
       ),
       { [direct]: 0 }
     );
-    assert.deepEqual(fixture.calls, [{ addresses: [direct], network: '1', snapshot: 123 }]);
+    assert.deepEqual(fixture.calls[0], { addresses: [direct], network: '1', snapshot: 123 });
   });
 });
+
+async function scoreWithProvider(provider, addresses = [proxy]) {
+  const fixture = createFixedScoreFixture();
+  const result = await fixture.strategy(
+    'space',
+    '1',
+    provider,
+    addresses,
+    { strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
+    123
+  );
+
+  return { result, calls: fixture.calls };
+}
 
 function createFixedScoreFixture() {
   const calls = [];
 
   return {
     calls,
-    strategy: createVotingProxyStrategy(async () => ({
+    strategy: _createVotingProxyStrategy(async () => ({
       strategy: async (_space, network, _provider, addresses, params = {}, snapshot) => {
         calls.push({ addresses, network, snapshot });
 

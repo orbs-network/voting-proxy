@@ -3,56 +3,35 @@ import { scoreWithVotingProxy } from './proxyScoring.js';
 export const author = 'voting-proxy';
 export const version = '0.1.0';
 export const overriding = true;
+export const strategy = _createVotingProxyStrategy((name) => import(`../${name}/index.js`));
 
-const SOURCE_SELECTOR = '0x67e828bf';
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
-const STRATEGY_NAME = /^[a-z0-9-]+$/;
+const SOURCE = '0x67e828bf';
+const ZERO = '0x0000000000000000000000000000000000000000';
+const NAME = /^[a-z0-9-]+$/;
 
-export const strategy = createVotingProxyStrategy(loadStrategy);
-
-export function createVotingProxyStrategy(loadStrategyModule) {
-    return async function votingProxyStrategy(space, network, provider, addresses, options, snapshot) {
-        const strategies = validateOptions(options);
+export function _createVotingProxyStrategy(loadStrategy) {
+    return async (space, network, provider, addresses, options, snapshot) => {
+        const strategies = options.strategies;
+        if (!Array.isArray(strategies) || !strategies.length) {
+            throw new Error('voting-proxy requires at least one inner strategy');
+        }
+        for (const { name } of strategies) if (!NAME.test(name)) throw new Error(`Invalid inner strategy name: ${name}`);
 
         return scoreWithVotingProxy({
             addresses,
             scoreInner: (scoringAddresses) =>
-                scoreInnerStrategies(space, network, provider, scoringAddresses, strategies, snapshot, loadStrategyModule),
-            resolveSources: (sourceCandidates) => resolveProxySources(provider, sourceCandidates, snapshot)
+                scoreStrategies(space, network, provider, scoringAddresses, strategies, snapshot, loadStrategy),
+            resolveSources: (proxies) => resolveSources(provider, proxies, snapshot)
         });
     };
 }
 
-export function validateOptions(options) {
-    if (!Array.isArray(options.strategies) || options.strategies.length === 0) {
-        throw new Error('voting-proxy requires at least one inner strategy');
-    }
-    if ((options.sourceMethod ?? 'source') !== 'source') {
-        throw new Error('voting-proxy currently supports sourceMethod = "source"');
-    }
-
-    for (const strategyConfig of options.strategies) {
-        if (!STRATEGY_NAME.test(strategyConfig.name)) {
-            throw new Error(`Invalid inner strategy name: ${strategyConfig.name}`);
-        }
-    }
-
-    return options.strategies;
-}
-
-async function scoreInnerStrategies(space, network, provider, addresses, strategies, snapshot, loadStrategyModule) {
+async function scoreStrategies(space, network, provider, addresses, strategies, snapshot, loadStrategy) {
     const totals = Object.fromEntries(addresses.map((address) => [address, 0]));
 
-    for (const strategyConfig of strategies) {
-        const strategyModule = await loadStrategyModule(strategyConfig.name);
-        const scores = await strategyModule.strategy(
-            space,
-            strategyConfig.network ?? network,
-            provider,
-            addresses,
-            strategyConfig.params ?? {},
-            snapshot
-        );
+    for (const { name, network: strategyNetwork, params = {} } of strategies) {
+        const { strategy } = await loadStrategy(name);
+        const scores = await strategy(space, strategyNetwork ?? network, provider, addresses, params, snapshot);
 
         for (const [address, score] of Object.entries(scores)) {
             totals[address] = (totals[address] ?? 0) + Number(score);
@@ -62,42 +41,21 @@ async function scoreInnerStrategies(space, network, provider, addresses, strateg
     return totals;
 }
 
-/* node:coverage ignore next 3 */
-function loadStrategy(name) {
-    return import(`../${name}/index.js`);
-}
-
-export async function resolveProxySources(provider, addresses, snapshot) {
+async function resolveSources(provider, addresses, snapshot) {
     const entries = await Promise.all(
         addresses.map(async (address) => {
-            const source = await readSource(provider, address, snapshot);
-
-            return source ? [address, source] : undefined;
+            try {
+                const source = decode(await provider.call({ to: address, data: SOURCE }, snapshot));
+                return source && source !== ZERO ? [address, source] : undefined;
+            } catch {
+                return undefined;
+            }
         })
     );
 
-    return Object.fromEntries(entries.filter((entry) => entry !== undefined));
+    return Object.fromEntries(entries.filter(Boolean));
 }
 
-async function readSource(provider, address, snapshot) {
-    if (!hasCall(provider)) return undefined;
-
-    try {
-        const result = await provider.call({ to: address, data: SOURCE_SELECTOR }, snapshot);
-        const source = decodeAddress(result);
-
-        return source === ZERO_ADDRESS ? undefined : source;
-    } catch {
-        return undefined;
-    }
-}
-
-function hasCall(provider) {
-    return typeof provider === 'object' && provider !== null && 'call' in provider;
-}
-
-export function decodeAddress(result) {
-    if (!/^0x[0-9a-fA-F]{64}$/.test(result)) return undefined;
-
-    return `0x${result.slice(26).toLowerCase()}`;
+function decode(result) {
+    return /^0x[0-9a-fA-F]{64}$/.test(result) ? `0x${result.slice(26).toLowerCase()}` : undefined;
 }

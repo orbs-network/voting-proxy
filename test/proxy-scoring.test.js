@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import {
-  normalizedScoreMap,
-  remapProxyScores,
-  scoreWithVotingProxy,
-  sourceAddressesToScore
-} from '../snapshot-strategies/voting-proxy/proxyScoring.js';
+import { scoreWithVotingProxy } from '../snapshot-strategies/voting-proxy/proxyScoring.js';
 
 const direct = address('10');
 const source = address('20');
@@ -18,128 +13,105 @@ function address(byte) {
 }
 
 describe('voting-proxy score remapping', () => {
-  it('keeps normal voter scores unchanged', () => {
-    assert.deepEqual(remapProxyScores([direct], { [direct]: 7 }, {}, {}), {
-      [direct]: 7
+  it('keeps normal voter scores unchanged', async () => {
+    const { result } = await scoreFixture({
+      addresses: [direct],
+      directScores: { [direct]: 7 }
     });
+
+    assert.deepEqual(result, { [direct]: 7 });
   });
 
-  it('returns the source score under a zero-vp proxy voter', () => {
-    assert.deepEqual(
-      remapProxyScores([proxyHigh], { [proxyHigh]: 0 }, { [proxyHigh]: source }, { [source]: 12 }),
-      {
-        [proxyHigh]: 12
-      }
-    );
-  });
-
-  it('treats missing direct scores as zero-vp proxy candidates', async () => {
-    const result = await scoreWithVotingProxy({
+  it('returns the source score under a zero-vp proxy voter', async () => {
+    const { result } = await scoreFixture({
       addresses: [proxyHigh],
-      scoreInner: async (addresses) => (addresses[0] === source ? { [source]: 12 } : {}),
-      resolveSources: async () => ({ [proxyHigh]: source })
+      directScores: { [proxyHigh]: 0 },
+      sourceByProxy: { [proxyHigh]: source },
+      sourceScores: { [source]: 12 }
     });
 
     assert.deepEqual(result, { [proxyHigh]: 12 });
   });
 
-  it('lets a direct source voter win over its proxy', () => {
-    assert.deepEqual(
-      remapProxyScores(
-        [source, proxyHigh],
-        { [source]: 12, [proxyHigh]: 0 },
-        { [proxyHigh]: source },
-        { [source]: 12 }
-      ),
-      {
-        [source]: 12,
-        [proxyHigh]: 0
-      }
-    );
+  it('treats missing direct scores as zero-vp proxy candidates', async () => {
+    const { result } = await scoreFixture({
+      addresses: [proxyHigh],
+      sourceByProxy: { [proxyHigh]: source },
+      sourceScores: { [source]: 12 }
+    });
+
+    assert.deepEqual(result, { [proxyHigh]: 12 });
   });
 
-  it('uses the lowest proxy address when multiple proxies resolve to the same source', () => {
-    assert.deepEqual(
-      remapProxyScores(
-        [proxyHigh, proxyLow],
-        { [proxyHigh]: 0, [proxyLow]: 0 },
-        { [proxyHigh]: source, [proxyLow]: source },
-        { [source]: 12 }
-      ),
-      {
-        [proxyHigh]: 0,
-        [proxyLow]: 12
-      }
-    );
+  it('lets a direct source voter win over its proxy', async () => {
+    const { result } = await scoreFixture({
+      addresses: [source, proxyHigh],
+      directScores: { [source]: 12, [proxyHigh]: 0 },
+      sourceByProxy: { [proxyHigh]: source },
+      sourceScores: { [source]: 12 }
+    });
+
+    assert.deepEqual(result, { [source]: 12, [proxyHigh]: 0 });
   });
 
-  it('dedups source addresses before rescoring', () => {
-    assert.deepEqual(
-      sourceAddressesToScore(
-        [proxyHigh, proxyLow],
-        { [proxyHigh]: 0, [proxyLow]: 0 },
-        { [proxyHigh]: source, [proxyLow]: source }
-      ),
-      [source]
-    );
+  it('uses the lowest proxy address when multiple proxies resolve to the same source', async () => {
+    const { result } = await scoreFixture({
+      addresses: [proxyHigh, proxyLow],
+      directScores: { [proxyHigh]: 0, [proxyLow]: 0 },
+      sourceByProxy: { [proxyHigh]: source, [proxyLow]: source },
+      sourceScores: { [source]: 12 }
+    });
+
+    assert.deepEqual(result, { [proxyHigh]: 0, [proxyLow]: 12 });
   });
 
-  it('returns zero when a resolved source has no source score', () => {
-    assert.deepEqual(remapProxyScores([proxyHigh], { [proxyHigh]: 0 }, { [proxyHigh]: source }, {}), {
+  it('dedups source addresses before rescoring', async () => {
+    const { scoredAddressSets } = await scoreFixture({
+      addresses: [proxyHigh, proxyLow],
+      directScores: { [proxyHigh]: 0, [proxyLow]: 0 },
+      sourceByProxy: { [proxyHigh]: source, [proxyLow]: source },
+      sourceScores: { [source]: 12 }
+    });
+
+    assert.deepEqual(scoredAddressSets, [[proxyHigh, proxyLow], [source]]);
+  });
+
+  it('returns zero for unresolved voters and sources without scores', async () => {
+    assert.deepEqual((await scoreFixture({ addresses: [proxyHigh], directScores: { [proxyHigh]: 0 } })).result, {
       [proxyHigh]: 0
     });
+
+    assert.deepEqual(
+      (
+        await scoreFixture({
+          addresses: [proxyHigh],
+          directScores: { [proxyHigh]: 0 },
+          sourceByProxy: { [proxyHigh]: source }
+        })
+      ).result,
+      { [proxyHigh]: 0 }
+    );
   });
 
-  it('matches scores and sources case-insensitively while preserving input casing', () => {
+  it('matches scores and sources case-insensitively while preserving input casing', async () => {
     const upperProxy = proxyHigh.toUpperCase();
-
-    assert.deepEqual(
-      remapProxyScores([upperProxy], { [upperProxy]: 0 }, { [proxyHigh]: source.toUpperCase() }, { [source]: 12 }),
-      {
-        [upperProxy]: 12
-      }
-    );
-  });
-
-  it('does not rescore positive-vp voters even when they expose source()', () => {
-    assert.deepEqual(sourceAddressesToScore([proxyHigh], { [proxyHigh]: 5 }, { [proxyHigh]: source }), []);
-  });
-
-  it('does not rescore unresolved zero-vp voters or sources already present as voters', () => {
-    assert.deepEqual(sourceAddressesToScore([proxyHigh], { [proxyHigh]: 0 }, {}), []);
-    assert.deepEqual(
-      sourceAddressesToScore([source, proxyHigh], { [source]: 12, [proxyHigh]: 0 }, { [proxyHigh]: source }),
-      []
-    );
-    assert.deepEqual(remapProxyScores([proxyHigh], { [proxyHigh]: 0 }, {}, {}), { [proxyHigh]: 0 });
-    assert.deepEqual(remapProxyScores([proxyHigh], { [proxyHigh]: 5 }, { [proxyHigh]: source }, {}), {
-      [proxyHigh]: 5
+    const { result, scoredAddressSets } = await scoreFixture({
+      addresses: [upperProxy],
+      directScores: { [upperProxy]: 0 },
+      sourceByProxy: { [proxyHigh]: source.toUpperCase() },
+      sourceScores: { [source]: 12 }
     });
-  });
 
-  it('normalizes score maps once for repeated lookups', () => {
-    const scores = normalizedScoreMap({ [proxyHigh.toUpperCase()]: 9 });
-
-    assert.equal(scores.get(proxyHigh), 9);
-    assert.equal(scores.get(proxyHigh.toUpperCase()), 9);
+    assert.deepEqual(result, { [upperProxy]: 12 });
+    assert.deepEqual(scoredAddressSets, [[upperProxy], [source]]);
   });
 
   it('scores original voters first and only resolves zero-vp source candidates', async () => {
-    const scoredAddressSets = [];
-    const resolvedAddressSets = [];
-
-    const result = await scoreWithVotingProxy({
+    const { result, scoredAddressSets, resolvedAddressSets } = await scoreFixture({
       addresses: [direct, proxyHigh],
-      scoreInner: async (addresses) => {
-        scoredAddressSets.push(addresses);
-        if (addresses[0] === source) return { [source]: 12 };
-
-        return { [direct]: 7, [proxyHigh]: 0 };
-      },
-      resolveSources: async (addresses) => {
-        resolvedAddressSets.push(addresses);
-        return { [proxyHigh]: source };
-      }
+      directScores: { [direct]: 7, [proxyHigh]: 0 },
+      sourceByProxy: { [proxyHigh]: source },
+      sourceScores: { [source]: 12 }
     });
 
     assert.deepEqual(scoredAddressSets, [[direct, proxyHigh], [source]]);
@@ -148,32 +120,47 @@ describe('voting-proxy score remapping', () => {
   });
 
   it('skips source resolution when all voters have direct voting power', async () => {
-    let resolveCalls = 0;
-    const result = await scoreWithVotingProxy({
+    const { result, scoredAddressSets, resolvedAddressSets } = await scoreFixture({
       addresses: [direct],
-      scoreInner: async () => ({ [direct]: 7 }),
-      resolveSources: async () => {
-        resolveCalls += 1;
-        return {};
-      }
+      directScores: { [direct]: 7 }
     });
 
-    assert.equal(resolveCalls, 0);
+    assert.deepEqual(scoredAddressSets, [[direct]]);
+    assert.deepEqual(resolvedAddressSets, []);
     assert.deepEqual(result, { [direct]: 7 });
   });
 
-  it('skips source scoring when zero-vp voters resolve to no source', async () => {
-    const scoredAddressSets = [];
-    const result = await scoreWithVotingProxy({
+  it('skips source scoring when no zero-vp voters resolve to sources', async () => {
+    const { result, scoredAddressSets, resolvedAddressSets } = await scoreFixture({
       addresses: [proxyHigh],
-      scoreInner: async (addresses) => {
-        scoredAddressSets.push(addresses);
-        return { [proxyHigh]: 0 };
-      },
-      resolveSources: async () => ({})
+      directScores: { [proxyHigh]: 0 }
     });
 
     assert.deepEqual(scoredAddressSets, [[proxyHigh]]);
+    assert.deepEqual(resolvedAddressSets, [[proxyHigh]]);
     assert.deepEqual(result, { [proxyHigh]: 0 });
   });
 });
+
+async function scoreFixture({ addresses, directScores = {}, sourceByProxy = {}, sourceScores = {} }) {
+  const scoredAddressSets = [];
+  const resolvedAddressSets = [];
+  let scoreCalls = 0;
+
+  const result = await scoreWithVotingProxy({
+    addresses,
+    scoreInner: async (scoringAddresses) => {
+      scoredAddressSets.push(scoringAddresses);
+      scoreCalls += 1;
+
+      return scoreCalls === 1 ? directScores : sourceScores;
+    },
+    resolveSources: async (sourceCandidates) => {
+      resolvedAddressSets.push(sourceCandidates);
+
+      return sourceByProxy;
+    }
+  });
+
+  return { result, scoredAddressSets, resolvedAddressSets };
+}

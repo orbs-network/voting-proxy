@@ -6,12 +6,6 @@
       "title": "Strategy",
       "type": "object",
       "properties": {
-        "sourceMethod": {
-          "type": "string",
-          "title": "Source method",
-          "default": "source",
-          "enum": ["source"]
-        },
         "strategies": {
           "type": "array",
           "title": "Inner strategies",

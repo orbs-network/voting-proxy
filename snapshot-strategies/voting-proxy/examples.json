@@ -4,7 +4,6 @@
     "strategy": {
       "name": "voting-proxy",
       "params": {
-        "sourceMethod": "source",
         "strategies": [
           {
             "name": "erc20-balance-of",

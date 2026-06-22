@@ -62,7 +62,6 @@ Example:
 
 ```json
 {
-  "sourceMethod": "source",
   "strategies": [
     {
       "name": "erc20-balance-of",
