@@ -2,8 +2,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "forge build && node --check snapshot-strategies/voting-proxy/index.js && node --check snapshot-strategies/voting-proxy/proxyScoring.js",
-    "test": "forge test && node --test test/*.test.js",
-    "coverage": "forge coverage --report summary --exclude-tests && node --experimental-test-coverage --test test/*.test.js"
+    "build": "forge build",
+    "test": "forge test && tsx --test",
+    "coverage": "forge coverage --report summary --exclude-tests && tsx --experimental-test-coverage --test"
+  },
+  "devDependencies": {
+    "@ethersproject/abi": "^5.8.0",
+    "@snapshot-labs/snapshot.js": "^0.14.22",
+    "tsx": "^4.22.4"
   }
 }

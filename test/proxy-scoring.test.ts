@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { scoreWithVotingProxy } from '../snapshot-strategies/voting-proxy/proxyScoring.js';
+import { scoreWithVotingProxy } from '../snapshot-strategies/voting-proxy/proxyScoring.ts';
 
 const direct = address('10');
 const source = address('20');
 const proxyHigh = address('30');
 const proxyLow = address('11');
 
-function address(byte) {
+function address(byte: string): string {
   return `0x${byte.repeat(20)}`;
 }
 
@@ -142,20 +142,30 @@ describe('voting-proxy score remapping', () => {
   });
 });
 
-async function scoreFixture({ addresses, directScores = {}, sourceByProxy = {}, sourceScores = {} }) {
-  const scoredAddressSets = [];
-  const resolvedAddressSets = [];
+async function scoreFixture({
+  addresses,
+  directScores = {},
+  sourceByProxy = {},
+  sourceScores = {}
+}: {
+  addresses: string[];
+  directScores?: Record<string, number>;
+  sourceByProxy?: Record<string, string>;
+  sourceScores?: Record<string, number>;
+}) {
+  const scoredAddressSets: string[][] = [];
+  const resolvedAddressSets: string[][] = [];
   let scoreCalls = 0;
 
   const result = await scoreWithVotingProxy({
     addresses,
-    scoreInner: async (scoringAddresses) => {
+    scoreInner: async (scoringAddresses: string[]) => {
       scoredAddressSets.push(scoringAddresses);
       scoreCalls += 1;
 
       return scoreCalls === 1 ? directScores : sourceScores;
     },
-    resolveSources: async (sourceCandidates) => {
+    resolveSources: async (sourceCandidates: string[]) => {
       resolvedAddressSets.push(sourceCandidates);
 
       return sourceByProxy;
