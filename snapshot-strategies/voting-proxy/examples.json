@@ -1,24 +1,26 @@
 [
   {
-    "name": "ERC-20 voting power through voting proxy",
+    "name": "Voting proxy with whitelisted source",
     "strategy": {
       "name": "voting-proxy",
       "params": {
         "strategies": [
           {
-            "name": "erc20-balance-of",
-            "network": "1",
+            "name": "whitelist",
             "params": {
-              "address": "0xToken",
-              "symbol": "TOKEN",
-              "decimals": 18
+              "symbol": "VP",
+              "addresses": ["0x135bb4cc36b5069Bc66130404F68dA593f9Fc2E8"]
             }
           }
         ]
       }
     },
-    "network": "1",
-    "addresses": ["0xVotingProxy"],
-    "snapshot": 15210123
+    "network": "56",
+    "addresses": [
+      "0x966885831bD5FdaAe28Fae45dB0B396E3135549c",
+      "0x000000000000000000000000000000000000dEaD",
+      "0x2222222222222222222222222222222222222222"
+    ],
+    "snapshot": 105693000
   }
 ]

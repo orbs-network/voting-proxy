@@ -1,38 +1,40 @@
 import { scoreWithVotingProxy } from './proxyScoring.js';
 
-export const author = 'voting-proxy';
-export const version = '0.1.0';
-export const overriding = true;
-export const strategy = _createVotingProxyStrategy((name) => import(`../${name}/index.js`));
+export const supportedProtocols = ['evm'];
+export const strategy = _createVotingProxyStrategy(loadScoreApiGetScoresDirect);
 
-const SOURCE = '0x67e828bf';
-const ZERO = '0x0000000000000000000000000000000000000000';
-const NAME = /^[a-z0-9-]+$/;
+const SOURCE_SELECTOR = '0x67e828bf';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
-export function _createVotingProxyStrategy(loadStrategy) {
+export function _createVotingProxyStrategy(getScoresDirect) {
     return async (space, network, provider, addresses, options, snapshot) => {
-        const strategies = options.strategies;
+        const strategies = options?.strategies;
         if (!Array.isArray(strategies) || !strategies.length) {
             throw new Error('voting-proxy requires at least one inner strategy');
         }
-        for (const { name } of strategies) if (!NAME.test(name)) throw new Error(`Invalid inner strategy name: ${name}`);
 
         return scoreWithVotingProxy({
             addresses,
             scoreInner: (scoringAddresses) =>
-                scoreStrategies(space, network, provider, scoringAddresses, strategies, snapshot, loadStrategy),
+                scoreStrategies(
+                    getScoresDirect,
+                    space,
+                    network,
+                    provider,
+                    scoringAddresses,
+                    strategies,
+                    snapshot
+                ),
             resolveSources: (proxies) => resolveSources(provider, proxies, snapshot)
         });
     };
 }
 
-async function scoreStrategies(space, network, provider, addresses, strategies, snapshot, loadStrategy) {
+async function scoreStrategies(getScoresDirect, space, network, provider, addresses, strategies, snapshot) {
     const totals = Object.fromEntries(addresses.map((address) => [address, 0]));
+    const scoresByStrategy = await getScoresDirect(space, strategies, network, provider, addresses, snapshot);
 
-    for (const { name, network: strategyNetwork, params = {} } of strategies) {
-        const { strategy } = await loadStrategy(name);
-        const scores = await strategy(space, strategyNetwork ?? network, provider, addresses, params, snapshot);
-
+    for (const scores of scoresByStrategy) {
         for (const [address, score] of Object.entries(scores)) {
             totals[address] = (totals[address] ?? 0) + Number(score);
         }
@@ -42,11 +44,16 @@ async function scoreStrategies(space, network, provider, addresses, strategies, 
 }
 
 async function resolveSources(provider, addresses, snapshot) {
+    if (!provider?.call) return {};
+
+    const blockTag = typeof snapshot === 'number' ? snapshot : 'latest';
     const entries = await Promise.all(
         addresses.map(async (address) => {
             try {
-                const source = decode(await provider.call({ to: address, data: SOURCE }, snapshot));
-                return source && source !== ZERO ? [address, source] : undefined;
+                const source = decodeSource(
+                    await provider.call({ to: address, data: SOURCE_SELECTOR }, blockTag)
+                );
+                return source && source !== ZERO_ADDRESS ? [address, source] : undefined;
             } catch {
                 return undefined;
             }
@@ -56,6 +63,11 @@ async function resolveSources(provider, addresses, snapshot) {
     return Object.fromEntries(entries.filter(Boolean));
 }
 
-function decode(result) {
+function decodeSource(result) {
     return /^0x[0-9a-fA-F]{64}$/.test(result) ? `0x${result.slice(26).toLowerCase()}` : undefined;
+}
+
+async function loadScoreApiGetScoresDirect(...args) {
+    const { getScoresDirect } = await import('../../utils');
+    return getScoresDirect(...args);
 }

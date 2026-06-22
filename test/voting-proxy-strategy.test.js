@@ -87,21 +87,9 @@ describe('voting-proxy strategy source resolution', () => {
       () => strategy('space', '1', {}, [proxy], {}, 123),
       /requires at least one inner strategy/
     );
-    await assert.rejects(
-      () =>
-        strategy(
-          'space',
-          '1',
-          {},
-          [proxy],
-          { strategies: [{ name: '../test/fixtures/fixed-score', params: {} }] },
-          123
-        ),
-      /Invalid inner strategy name/
-    );
   });
 
-  it('runs inner strategies before and after resolving proxy sources', async () => {
+  it('scores voters before and after resolving proxy sources through getScoresDirect', async () => {
     const fixture = createFixedScoreFixture();
     const provider = {
       async call() {
@@ -133,12 +121,44 @@ describe('voting-proxy strategy source resolution', () => {
 
     assert.deepEqual(result, { [direct]: 7, [proxy]: 12 });
     assert.deepEqual(fixture.calls, [
-      { addresses: [direct, proxy], network: '2', snapshot: 123 },
-      { addresses: [source], network: '2', snapshot: 123 }
+      {
+        addresses: [direct, proxy],
+        network: '1',
+        snapshot: 123,
+        strategies: [
+          {
+            name: 'fixed-score',
+            network: '2',
+            params: {
+              scores: {
+                [direct]: 7,
+                [source]: 12
+              }
+            }
+          }
+        ]
+      },
+      {
+        addresses: [source],
+        network: '1',
+        snapshot: 123,
+        strategies: [
+          {
+            name: 'fixed-score',
+            network: '2',
+            params: {
+              scores: {
+                [direct]: 7,
+                [source]: 12
+              }
+            }
+          }
+        ]
+      }
     ]);
   });
 
-  it('sums multiple configured inner strategies', async () => {
+  it('sums score maps returned for multiple configured inner strategies', async () => {
     const fixture = createFixedScoreFixture();
 
     assert.deepEqual(
@@ -159,10 +179,8 @@ describe('voting-proxy strategy source resolution', () => {
     );
   });
 
-  it('handles extra score keys emitted by inner strategies without returning them', async () => {
-    const strategyWithExtraScores = _createVotingProxyStrategy(async () => ({
-      strategy: async () => ({ [direct]: 2, [source]: 3 })
-    }));
+  it('handles extra score keys emitted by getScoresDirect without returning them', async () => {
+    const strategyWithExtraScores = _createVotingProxyStrategy(async () => [{ [direct]: 2, [source]: 3 }]);
 
     assert.deepEqual(
       await strategyWithExtraScores('space', '1', {}, [direct], { strategies: [{ name: 'fixed-score' }] }, 123),
@@ -170,7 +188,7 @@ describe('voting-proxy strategy source resolution', () => {
     );
   });
 
-  it('defaults inner strategy network and params', async () => {
+  it('passes strategy options through to getScoresDirect', async () => {
     const fixture = createFixedScoreFixture();
 
     assert.deepEqual(
@@ -186,7 +204,12 @@ describe('voting-proxy strategy source resolution', () => {
       ),
       { [direct]: 0 }
     );
-    assert.deepEqual(fixture.calls[0], { addresses: [direct], network: '1', snapshot: 123 });
+    assert.deepEqual(fixture.calls[0], {
+      addresses: [direct],
+      network: '1',
+      snapshot: 123,
+      strategies: [{ name: 'fixed-score' }]
+    });
   });
 });
 
@@ -209,14 +232,12 @@ function createFixedScoreFixture() {
 
   return {
     calls,
-    strategy: _createVotingProxyStrategy(async () => ({
-      strategy: async (_space, network, _provider, addresses, params = {}, snapshot) => {
-        calls.push({ addresses, network, snapshot });
+    strategy: _createVotingProxyStrategy(async (_space, strategies, network, _provider, addresses, snapshot) => {
+      calls.push({ addresses, network, snapshot, strategies });
 
-        return Object.fromEntries(
-          addresses.map((address) => [address, Number(params.scores?.[address.toLowerCase()] ?? 0)])
-        );
-      }
-    }))
+      return strategies.map(({ params = {} }) =>
+        Object.fromEntries(addresses.map((address) => [address, Number(params.scores?.[address.toLowerCase()] ?? 0)]))
+      );
+    })
   };
 }

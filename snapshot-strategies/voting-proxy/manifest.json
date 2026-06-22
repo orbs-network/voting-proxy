@@ -1,6 +1,6 @@
 {
-  "name": "voting-proxy",
+  "name": "Voting Proxy",
+  "author": "orbs-network",
   "version": "0.1.0",
-  "author": "voting-proxy",
-  "description": "Generic overriding Snapshot strategy that maps zero-VP proxy voters to their source() voting-power address."
+  "overriding": true
 }

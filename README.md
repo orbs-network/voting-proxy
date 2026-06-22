@@ -1,8 +1,8 @@
 # 🗳️ Voting Proxy
 
-Generic ERC-1271 voting proxy for Snapshot contract voting without moving stake, tokens, or delegation.
+Generic ERC-1271 voting proxy for Snapshot voting without moving voting power.
 
-For older multisigs that cannot implement ERC-1271, upgrade, or move their voting position, `VotingProxy` lets the multisig approve exact vote hashes through a small companion contract.
+For older multisigs that cannot upgrade to ERC-1271 or move their voting power, `VotingProxy` lets the multisig approve exact vote hashes through a small companion contract.
 
 ## ✨ What
 
