@@ -7,7 +7,7 @@ import { _createVotingProxyStrategy, strategy } from '../snapshot-strategies/vot
 const proxy = address('11');
 const direct = address('10');
 const source = address('22');
-const encodedSource = `0x${'0'.repeat(24)}${source.slice(2)}`;
+const zeroSource = address('00');
 
 function address(byte) {
   return `0x${byte.repeat(20)}`;
@@ -21,61 +21,80 @@ describe('voting-proxy strategy source resolution', () => {
     assert.equal('createVotingProxyStrategy' in votingProxyModule, false);
   });
 
-  it('resolves sources through provider.call at the snapshot block', async () => {
-    const calls = [];
-    const provider = {
-      async call(tx, blockTag) {
-        calls.push([tx, blockTag]);
-        return encodedSource;
-      }
-    };
+  it('resolves sources through one multicall at the snapshot block', async () => {
+    const provider = {};
+    const fixture = createFixedScoreFixture({ sourceResponses: [source] });
 
-    const { result } = await scoreWithProvider(provider);
+    const result = await fixture.strategy(
+      'space',
+      '1',
+      provider,
+      [proxy],
+      { strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
+      123
+    );
 
     assert.deepEqual(result, { [proxy]: 12 });
-    assert.deepEqual(calls, [[{ to: proxy, data: '0x67e828bf' }, 123]]);
+    assert.deepEqual(fixture.multicallCalls, [
+      {
+        network: '1',
+        provider,
+        addresses: [proxy],
+        calls: [proxy],
+        blockTag: 123
+      }
+    ]);
   });
 
   it('rejects malformed source() return data', async () => {
-    const { result } = await scoreWithProvider({
-      async call() {
-        return '0x1234';
-      }
-    });
+    const { result } = await scoreWithProvider([address('123')]);
 
     assert.deepEqual(result, { [proxy]: 0 });
   });
 
   it('keeps resolved sources and drops unresolved sources in the same batch', async () => {
     const unresolvedProxy = address('33');
-    const provider = {
-      async call(tx) {
-        return tx.to === proxy ? encodedSource : '0x1234';
-      }
-    };
 
-    const { result } = await scoreWithProvider(provider, [proxy, unresolvedProxy]);
+    const { result, multicallCalls } = await scoreWithProvider(
+      [source, '0x1234'],
+      [proxy, unresolvedProxy]
+    );
 
     assert.deepEqual(result, { [proxy]: 12, [unresolvedProxy]: 0 });
+    assert.deepEqual(multicallCalls[0].calls, [
+      proxy,
+      unresolvedProxy
+    ]);
   });
 
-  it('ignores non-contracts, reverting calls, zero sources, and providers without call support', async () => {
-    const zeroSource = `0x${'0'.repeat(64)}`;
-    const revertingProvider = {
-      async call() {
-        throw new Error('not a contract');
-      }
-    };
-    const zeroProvider = {
-      async call() {
-        return zeroSource;
-      }
-    };
+  it(
+    'accepts array-shaped multicall results and uses latest for non-number snapshots',
+    async () => {
+      const provider = {};
+      const fixture = createFixedScoreFixture({ sourceResponses: [[source]] });
 
-    assert.deepEqual((await scoreWithProvider({})).result, { [proxy]: 0 });
-    assert.deepEqual((await scoreWithProvider(null)).result, { [proxy]: 0 });
-    assert.deepEqual((await scoreWithProvider(revertingProvider)).result, { [proxy]: 0 });
-    assert.deepEqual((await scoreWithProvider(zeroProvider)).result, { [proxy]: 0 });
+      const result = await fixture.strategy(
+        'space',
+        '1',
+        provider,
+        [proxy],
+        { strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
+        'latest'
+      );
+
+      assert.deepEqual(result, { [proxy]: 12 });
+      assert.equal(fixture.multicallCalls[0].blockTag, 'latest');
+    }
+  );
+
+  it('ignores zero sources, failed multicalls, and missing providers', async () => {
+    assert.deepEqual((await scoreWithProvider([zeroSource])).result, { [proxy]: 0 });
+    assert.deepEqual((await scoreWithProvider([], [proxy], new Error('not a contract'))).result, {
+      [proxy]: 0
+    });
+    assert.deepEqual((await scoreWithProvider([source], [proxy], undefined, null)).result, {
+      [proxy]: 0
+    });
   });
 
   it('validates required inner strategy options', async () => {
@@ -90,12 +109,8 @@ describe('voting-proxy strategy source resolution', () => {
   });
 
   it('scores voters before and after resolving proxy sources through getScoresDirect', async () => {
-    const fixture = createFixedScoreFixture();
-    const provider = {
-      async call() {
-        return encodedSource;
-      }
-    };
+    const fixture = createFixedScoreFixture({ sourceResponses: [source] });
+    const provider = {};
 
     const result = await fixture.strategy(
       'space',
@@ -180,10 +195,20 @@ describe('voting-proxy strategy source resolution', () => {
   });
 
   it('handles extra score keys emitted by getScoresDirect without returning them', async () => {
-    const strategyWithExtraScores = _createVotingProxyStrategy(async () => [{ [direct]: 2, [source]: 3 }]);
+    const strategyWithExtraScores = _createVotingProxyStrategy({
+      getScoresDirect: async () => [{ [direct]: 2, [source]: 3 }],
+      callSourceMulticall: async () => []
+    });
 
     assert.deepEqual(
-      await strategyWithExtraScores('space', '1', {}, [direct], { strategies: [{ name: 'fixed-score' }] }, 123),
+      await strategyWithExtraScores(
+        'space',
+        '1',
+        {},
+        [direct],
+        { strategies: [{ name: 'fixed-score' }] },
+        123
+      ),
       { [direct]: 2 }
     );
   });
@@ -213,8 +238,13 @@ describe('voting-proxy strategy source resolution', () => {
   });
 });
 
-async function scoreWithProvider(provider, addresses = [proxy]) {
-  const fixture = createFixedScoreFixture();
+async function scoreWithProvider(
+  sourceResponses,
+  addresses = [proxy],
+  multicallError,
+  provider = {}
+) {
+  const fixture = createFixedScoreFixture({ sourceResponses, multicallError });
   const result = await fixture.strategy(
     'space',
     '1',
@@ -224,20 +254,41 @@ async function scoreWithProvider(provider, addresses = [proxy]) {
     123
   );
 
-  return { result, calls: fixture.calls };
+  return { result, calls: fixture.calls, multicallCalls: fixture.multicallCalls };
 }
 
-function createFixedScoreFixture() {
+function createFixedScoreFixture({ sourceResponses = [], multicallError } = {}) {
   const calls = [];
+  const multicallCalls = [];
 
   return {
     calls,
-    strategy: _createVotingProxyStrategy(async (_space, strategies, network, _provider, addresses, snapshot) => {
-      calls.push({ addresses, network, snapshot, strategies });
+    multicallCalls,
+    strategy: _createVotingProxyStrategy({
+      getScoresDirect: async (_space, strategies, network, _provider, addresses, snapshot) => {
+        calls.push({ addresses, network, snapshot, strategies });
 
-      return strategies.map(({ params = {} }) =>
-        Object.fromEntries(addresses.map((address) => [address, Number(params.scores?.[address.toLowerCase()] ?? 0)]))
-      );
+        return strategies.map(({ params = {} }) =>
+          Object.fromEntries(
+            addresses.map((address) => [
+              address,
+              Number(params.scores?.[address.toLowerCase()] ?? 0)
+            ])
+          )
+        );
+      },
+      callSourceMulticall: async (network, provider, sourceAddresses, blockTag) => {
+        multicallCalls.push({
+          network,
+          provider,
+          addresses: sourceAddresses,
+          calls: sourceAddresses,
+          blockTag
+        });
+        if (multicallError) throw multicallError;
+
+        return sourceResponses.slice(0, sourceAddresses.length);
+      }
     })
   };
 }

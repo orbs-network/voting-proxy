@@ -2,7 +2,11 @@
 
 Generic ERC-1271 voting proxy for Snapshot voting without moving voting power.
 
-For older multisigs that cannot upgrade to ERC-1271 or move their voting power, `VotingProxy` lets the multisig approve exact vote hashes through a small companion contract.
+For older multisigs that cannot upgrade to ERC-1271 or move their voting power,
+`VotingProxy` lets the multisig approve exact vote hashes through a small
+companion contract.
+
+Snapshot Score API strategy PR: https://github.com/snapshot-labs/score-api/pull/1452
 
 ## ✨ What
 
@@ -53,7 +57,7 @@ Minimal behavior:
 `voting-proxy` is a generic wrapper strategy:
 
 1. Run inner strategies for each voter normally.
-2. If a voter has `0` VP and is a contract, call `source()`.
+2. If a voter has `0` VP, batch-call `source()` with Snapshot multicall.
 3. Run inner strategies for the source address.
 4. Return the source score under the original proxy voter.
 5. Dedup multiple voters that resolve to the same source.
