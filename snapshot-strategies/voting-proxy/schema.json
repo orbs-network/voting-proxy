@@ -6,15 +6,24 @@
       "title": "Strategy",
       "type": "object",
       "properties": {
+        "factory": {
+          "type": "string",
+          "title": "Voting proxy factory",
+          "pattern": "^0x[a-fA-F0-9]{40}$"
+        },
         "strategies": {
           "type": "array",
           "title": "Inner strategies",
           "minItems": 1,
+          "maxItems": 10,
           "items": {
             "type": "object",
             "properties": {
               "name": {
-                "type": "string"
+                "type": "string",
+                "not": {
+                  "const": "voting-proxy"
+                }
               },
               "network": {
                 "type": "string"
@@ -28,7 +37,7 @@
           }
         }
       },
-      "required": ["strategies"],
+      "required": ["factory", "strategies"],
       "additionalProperties": false
     }
   }

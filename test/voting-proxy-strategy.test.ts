@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { Interface } from '@ethersproject/abi';
-import networks from '@snapshot-labs/snapshot.js/src/networks.json';
 import * as votingProxyModule from '../snapshot-strategies/voting-proxy/index.ts';
 import { _createVotingProxyStrategy, strategy } from '../snapshot-strategies/voting-proxy/index.ts';
 import { resetGetScoresDirectHandler, setGetScoresDirectHandler } from '../utils.ts';
@@ -11,11 +10,13 @@ const proxy = address('11');
 const direct = address('10');
 const source = address('22');
 const zeroSource = address('00');
+const factory = address('44');
+const multicall3Address = '0xcA11bde05977b3631167028862bE2a173976CA11';
 const aggregateInterface = new Interface([
-  'function aggregate(tuple(address target, bytes callData)[] calls) view returns (uint256 blockNumber, bytes[] returnData)'
+  'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) view returns (tuple(bool success, bytes returnData)[] returnData)'
 ]);
-const sourceInterface = new Interface(['function source() view returns (address)']);
-const sourceCalldata = sourceInterface.encodeFunctionData('source', []);
+const factoryInterface = new Interface(['function source(address proxy) view returns (address)']);
+type SourceResult = string | 'failed' | 'malformed';
 
 function address(byte: string): string {
   return `0x${byte.repeat(20)}`;
@@ -38,14 +39,14 @@ describe('voting-proxy strategy source resolution', () => {
       '1',
       provider,
       [proxy],
-      { strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
+      { factory, strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
       123
     );
 
     assert.deepEqual(result, { [proxy]: 12 });
     assert.deepEqual(fixture.multicallCalls, [
       {
-        network: '1',
+        factory,
         provider,
         addresses: [proxy],
         calls: [proxy],
@@ -75,16 +76,16 @@ describe('voting-proxy strategy source resolution', () => {
       '1',
       provider,
       [proxy],
-      { strategies: [{ name: 'fixed-score' }] },
+      { factory, strategies: [{ name: 'fixed-score' }] },
       123
     );
 
     assert.deepEqual(result, { [proxy]: 12 });
     assert.equal(provider.calls.length, 1);
-    assert.equal(provider.calls[0][0].to, networks['1'].multicall);
+    assert.equal(provider.calls[0][0].to, multicall3Address);
     assert.equal(provider.calls[0][1], 123);
     assert.deepEqual(decodeAggregateCalls(provider), [
-      [proxy.toLowerCase(), sourceCalldata]
+      [factory, true, factorySourceCalldata(proxy)]
     ]);
     assert.deepEqual(calls[1], {
       addresses: [source],
@@ -103,7 +104,7 @@ describe('voting-proxy strategy source resolution', () => {
         '1',
         createProvider(['malformed', zeroSource]),
         [proxy, direct],
-        { strategies: [{ name: 'fixed-score' }] },
+        { factory, strategies: [{ name: 'fixed-score' }] },
         123
       ),
       { [proxy]: 0, [direct]: 0 }
@@ -112,12 +113,12 @@ describe('voting-proxy strategy source resolution', () => {
       await strategy(
         'space',
         '1',
-        createProvider([], new Error('not a contract')),
-        [proxy],
-        { strategies: [{ name: 'fixed-score' }] },
+        createProvider(['failed', source]),
+        [proxy, direct],
+        { factory, strategies: [{ name: 'fixed-score' }] },
         123
       ),
-      { [proxy]: 0 }
+      { [proxy]: 0, [direct]: 0 }
     );
     assert.deepEqual(
       await strategy(
@@ -125,7 +126,7 @@ describe('voting-proxy strategy source resolution', () => {
         '1',
         null,
         [proxy],
-        { strategies: [{ name: 'fixed-score' }] },
+        { factory, strategies: [{ name: 'fixed-score' }] },
         123
       ),
       { [proxy]: 0 }
@@ -145,7 +146,7 @@ describe('voting-proxy strategy source resolution', () => {
         '1',
         provider,
         [proxy],
-        { strategies: [{ name: 'fixed-score' }] },
+        { factory, strategies: [{ name: 'fixed-score' }] },
         'latest'
       ),
       { [proxy]: 12 }
@@ -155,7 +156,7 @@ describe('voting-proxy strategy source resolution', () => {
   });
 
   it('rejects malformed source() return data', async () => {
-    const { result } = await scoreWithProvider([address('123')]);
+    const { result } = await scoreWithProvider(['malformed']);
 
     assert.deepEqual(result, { [proxy]: 0 });
   });
@@ -186,7 +187,7 @@ describe('voting-proxy strategy source resolution', () => {
         '1',
         provider,
         [proxy],
-        { strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
+        { factory, strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
         'latest'
       );
 
@@ -209,7 +210,7 @@ describe('voting-proxy strategy source resolution', () => {
     const fixture = createFixedScoreFixture();
 
     await assert.rejects(
-      () => strategy('space', '1', {}, [proxy], { strategies: [] }, 123),
+      () => strategy('space', '1', {}, [proxy], { factory, strategies: [] }, 123),
       /requires at least one inner strategy/
     );
     await assert.rejects(
@@ -222,9 +223,11 @@ describe('voting-proxy strategy source resolution', () => {
     );
   });
 
-  it('keeps unsupported networks unresolved in the exported strategy', async () => {
+  it('uses the configured factory independent of the strategy network', async () => {
     const provider = createProvider([source]);
-    setGetScoresDirectHandler(async () => [{ [proxy]: 0 }]);
+    setGetScoresDirectHandler(async (_space, _strategies, _network, _provider, addresses) =>
+      addresses[0] === proxy ? [{ [proxy]: 0 }] : [{ [source]: 12 }]
+    );
 
     assert.deepEqual(
       await strategy(
@@ -232,12 +235,12 @@ describe('voting-proxy strategy source resolution', () => {
         'unsupported',
         provider,
         [proxy],
-        { strategies: [{ name: 'fixed-score' }] },
+        { factory, strategies: [{ name: 'fixed-score' }] },
         123
       ),
-      { [proxy]: 0 }
+      { [proxy]: 12 }
     );
-    assert.equal(provider.calls.length, 0);
+    assert.equal(provider.calls.length, 1);
     resetGetScoresDirectHandler();
   });
 
@@ -251,6 +254,7 @@ describe('voting-proxy strategy source resolution', () => {
       provider,
       [direct, proxy],
       {
+        factory,
         strategies: [
           {
             name: 'fixed-score',
@@ -316,6 +320,7 @@ describe('voting-proxy strategy source resolution', () => {
         {},
         [direct],
         {
+          factory,
           strategies: [
             { name: 'fixed-score', params: { scores: { [direct]: 2 } } },
             { name: 'fixed-score', params: { scores: { [direct]: 3 } } }
@@ -340,6 +345,7 @@ describe('voting-proxy strategy source resolution', () => {
         {},
         [direct],
         {
+          factory,
           strategies: [
             { name: 'fixed-score' },
             { name: 'fixed-score' }
@@ -364,7 +370,7 @@ describe('voting-proxy strategy source resolution', () => {
           '1',
           {},
           [direct],
-          { strategies: [{ name: 'fixed-score' }] },
+          { factory, strategies: [{ name: 'fixed-score' }] },
           123
         ),
       /score api unavailable/
@@ -384,7 +390,7 @@ describe('voting-proxy strategy source resolution', () => {
         '1',
         {},
         [direct],
-        { strategies: [{ name: 'fixed-score' }] },
+        { factory, strategies: [{ name: 'fixed-score' }] },
         123
       ),
       { [direct]: 2 }
@@ -401,6 +407,7 @@ describe('voting-proxy strategy source resolution', () => {
         {},
         [direct],
         {
+          factory,
           strategies: [{ name: 'fixed-score' }]
         },
         123
@@ -416,32 +423,43 @@ describe('voting-proxy strategy source resolution', () => {
   });
 });
 
-function createProvider(sourceResults: string[], error?: Error) {
+function createProvider(sourceResults: SourceResult[], error?: Error) {
+  let resultIndex = 0;
+
   return {
     calls: [] as Array<[{ to: string; data: string }, number | 'latest']>,
     async call(transaction: { to: string; data: string }, blockTag: number | 'latest') {
       this.calls.push([transaction, blockTag]);
       if (error) throw error;
 
-      return aggregateInterface.encodeFunctionResult('aggregate', [
-        123,
-        sourceResults.map(encodeSourceResult)
+      const calls = aggregateInterface.decodeFunctionData('aggregate3', transaction.data)[0];
+      const pageResults = sourceResults.slice(resultIndex, resultIndex + calls.length);
+      resultIndex += calls.length;
+
+      return aggregateInterface.encodeFunctionResult('aggregate3', [
+        pageResults.map(encodeSourceResult)
       ]);
     }
   };
 }
 
-function encodeSourceResult(sourceResult: string): string {
-  return sourceResult === 'malformed'
-    ? '0x1234'
-    : sourceInterface.encodeFunctionResult('source', [sourceResult]);
+function encodeSourceResult(sourceResult: SourceResult): [boolean, string] {
+  if (sourceResult === 'failed') return [false, '0x'];
+  if (sourceResult === 'malformed') return [true, '0x1234'];
+
+  return [true, factoryInterface.encodeFunctionResult('source', [sourceResult])];
 }
 
-function decodeAggregateCalls(provider: ReturnType<typeof createProvider>): string[][] {
-  const calls = aggregateInterface.decodeFunctionData('aggregate', provider.calls[0][0].data)[0];
+function factorySourceCalldata(proxyAddress: string): string {
+  return factoryInterface.encodeFunctionData('source', [proxyAddress.toLowerCase()]);
+}
 
-  return Array.from(calls as unknown as Array<[string, string]>).map(([target, data]) => [
+function decodeAggregateCalls(provider: ReturnType<typeof createProvider>): Array<[string, boolean, string]> {
+  const calls = aggregateInterface.decodeFunctionData('aggregate3', provider.calls[0][0].data)[0];
+
+  return Array.from(calls as unknown as Array<[string, boolean, string]>).map(([target, allowFailure, data]) => [
     target,
+    allowFailure,
     data
   ]);
 }
@@ -458,7 +476,7 @@ async function scoreWithProvider(
     '1',
     provider,
     addresses,
-    { strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
+    { factory, strategies: [{ name: 'fixed-score', params: { scores: { [source]: 12 } } }] },
     123
   );
 
@@ -479,7 +497,7 @@ function createFixedScoreFixture({
     strategies: Array<{ name: string; params?: { scores?: Record<string, number> } }>;
   }> = [];
   const multicallCalls: Array<{
-    network: string;
+    factory: string;
     provider: any;
     addresses: string[];
     calls: string[];
@@ -502,9 +520,9 @@ function createFixedScoreFixture({
           )
         );
       },
-      callSourceMulticall: async (network, provider, sourceAddresses, blockTag) => {
+      callSourceMulticall: async (provider, sourceFactory, sourceAddresses, blockTag) => {
         multicallCalls.push({
-          network,
+          factory: sourceFactory,
           provider,
           addresses: sourceAddresses,
           calls: sourceAddresses,

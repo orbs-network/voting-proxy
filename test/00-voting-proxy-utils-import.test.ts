@@ -18,7 +18,10 @@ test('propagates missing Score API utils imports', async () => {
           '1',
           {},
           ['0x1111111111111111111111111111111111111111'],
-          { strategies: [{ name: 'fixed-score' }] },
+          {
+            factory: '0x2222222222222222222222222222222222222222',
+            strategies: [{ name: 'fixed-score' }]
+          },
           123
         ),
       (error) =>

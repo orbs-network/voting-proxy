@@ -12,8 +12,9 @@ Snapshot Score API strategy PR: https://github.com/snapshot-labs/score-api/pull/
 
 1. 🔐 A multisig approves an exact Snapshot vote hash and associated data onchain.
 2. 🧾 `VotingProxy` exposes ERC-1271 `isValidSignature`.
-3. 🧮 A Snapshot `voting-proxy` strategy maps proxy voting power to `source()`.
-4. 📬 Snapshot counts the proxy vote with the owner's configured voting power.
+3. 🏭 `VotingProxyFactory` records factory-created proxy sources.
+4. 🧮 A Snapshot `voting-proxy` strategy maps proxy voting power through the factory.
+5. 📬 Snapshot counts the proxy vote with the owner's configured voting power.
 
 ## 🧱 Contract
 
@@ -46,6 +47,8 @@ Minimal behavior:
 1. `owner` approves vote hashes.
 2. `owner` provides voting power through `source()`.
 3. The constructor `owner` argument sets the only owner.
+4. `VotingProxyFactory.create()` deploys a proxy for `msg.sender`.
+5. `VotingProxyFactory.source(proxy)` returns the registered source for factory-created proxies.
 
 ## 🔁 Flow
 
@@ -55,14 +58,14 @@ Minimal behavior:
 4. Later signers or submitters can read `votes(hash)` to recover the stored data.
 5. Submit the vote with `address = VotingProxy` and `sig = "0x"`.
 6. Snapshot calls `isValidSignature(hash, 0x)`.
-7. Snapshot strategy gives `VotingProxy` the voting power of `source()`.
+7. Snapshot strategy gives `VotingProxy` the voting power of `VotingProxyFactory.source(VotingProxy)`.
 
 ## 🧮 Strategy
 
-`voting-proxy` is a generic wrapper strategy:
+`voting-proxy` is a factory-gated wrapper strategy:
 
 1. Run inner strategies for each voter normally.
-2. If a voter has `0` VP, batch-call `source()` with Snapshot multicall.
+2. If a voter has `0` VP, batch-call `factory.source(voter)`.
 3. Run inner strategies for the source address.
 4. Return the source score under the original proxy voter.
 5. Dedup multiple voters that resolve to the same source.
@@ -71,14 +74,15 @@ Example:
 
 ```json
 {
+  "factory": "0x1111111111111111111111111111111111111111",
   "strategies": [
     {
       "name": "erc20-balance-of",
       "network": "1",
       "params": {
-        "address": "0xToken",
-        "symbol": "TOKEN",
-        "decimals": 18
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "symbol": "USDC",
+        "decimals": 6
       }
     }
   ]
@@ -89,7 +93,7 @@ Example:
 
 If multiple voters resolve to the same `source()`:
 
-1. Direct source voter wins if present.
+1. Direct source voter wins if it has positive voting power.
 2. Otherwise the lowest proxy address wins deterministically.
 3. All other voters for that source return `0`.
 
