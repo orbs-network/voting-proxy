@@ -24,7 +24,7 @@ contract VotingProxy is IVotingProxy {
     error InvalidOwner(address owner);
     error UnauthorizedAccount(address account);
     error EmptyData();
-    error VoteAlreadyApproved(bytes32 hash);
+    error AlreadyVoted(bytes32 hash);
 
     constructor(address owner_) {
         if (owner_ == address(0)) revert InvalidOwner(owner_);
@@ -40,7 +40,7 @@ contract VotingProxy is IVotingProxy {
     function vote(bytes32 hash, bytes calldata data) external {
         if (msg.sender != owner) revert UnauthorizedAccount(msg.sender);
         if (data.length == 0) revert EmptyData();
-        if (votes[hash].length != 0) revert VoteAlreadyApproved(hash);
+        if (votes[hash].length != 0) revert AlreadyVoted(hash);
 
         votes[hash] = data;
         emit Vote(hash, data);

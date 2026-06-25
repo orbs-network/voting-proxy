@@ -27,7 +27,7 @@ contract VotingProxyTest is Test {
     error InvalidOwner(address owner);
     error UnauthorizedAccount(address account);
     error EmptyData();
-    error VoteAlreadyApproved(bytes32 hash);
+    error AlreadyVoted(bytes32 hash);
 
     function setUp() public {
         proxy = new VotingProxy(source);
@@ -69,7 +69,7 @@ contract VotingProxyTest is Test {
         vm.prank(source);
         proxy.vote(voteHash, data);
 
-        vm.expectRevert(abi.encodeWithSelector(VoteAlreadyApproved.selector, voteHash));
+        vm.expectRevert(abi.encodeWithSelector(AlreadyVoted.selector, voteHash));
 
         vm.prank(source);
         proxy.vote(voteHash, otherData);
