@@ -18,12 +18,16 @@ contract VotingProxyTest is Test {
 
     bytes32 private voteHash = keccak256("snapshot-vote");
     bytes32 private otherHash = keccak256("other-vote");
+    bytes private data = hex"010203";
+    bytes private otherData = hex"040506";
 
     VotingProxy private proxy;
 
-    event Vote(bytes32 indexed hash);
+    event Vote(bytes32 indexed hash, bytes data);
     error InvalidOwner(address owner);
     error UnauthorizedAccount(address account);
+    error EmptyData();
+    error VoteAlreadyApproved(bytes32 hash);
 
     function setUp() public {
         proxy = new VotingProxy(source);
@@ -41,29 +45,42 @@ contract VotingProxyTest is Test {
 
     function testOwnerCanApproveExactVoteHash() public {
         vm.expectEmit(true, false, false, true, address(proxy));
-        emit Vote(voteHash);
+        emit Vote(voteHash, data);
 
         vm.prank(source);
-        proxy.vote(voteHash);
+        proxy.vote(voteHash, data);
 
-        assertTrue(proxy.votes(voteHash));
+        assertEq(proxy.votes(voteHash), data);
         assertEq(proxy.isValidSignature(voteHash, hex""), ERC1271_MAGIC_VALUE);
         assertEq(proxy.isValidSignature(otherHash, hex""), ERC1271_INVALID_VALUE);
     }
 
-    function testOwnerCanApproveSameVoteHashTwice() public {
-        vm.startPrank(source);
-        proxy.vote(voteHash);
-        proxy.vote(voteHash);
-        vm.stopPrank();
+    function testRejectsEmptyData() public {
+        vm.expectRevert(EmptyData.selector);
 
-        assertTrue(proxy.votes(voteHash));
+        vm.prank(source);
+        proxy.vote(voteHash, hex"");
+
+        assertEq(proxy.votes(voteHash), hex"");
+        assertEq(proxy.isValidSignature(voteHash, hex""), ERC1271_INVALID_VALUE);
+    }
+
+    function testCannotReplaceApprovedData() public {
+        vm.prank(source);
+        proxy.vote(voteHash, data);
+
+        vm.expectRevert(abi.encodeWithSelector(VoteAlreadyApproved.selector, voteHash));
+
+        vm.prank(source);
+        proxy.vote(voteHash, otherData);
+
+        assertEq(proxy.votes(voteHash), data);
         assertEq(proxy.isValidSignature(voteHash, hex""), ERC1271_MAGIC_VALUE);
     }
 
     function testRejectsNonEmptySignatureEvenForApprovedHash() public {
         vm.prank(source);
-        proxy.vote(voteHash);
+        proxy.vote(voteHash, data);
 
         assertEq(proxy.isValidSignature(voteHash, hex"01"), ERC1271_INVALID_VALUE);
     }
@@ -72,7 +89,7 @@ contract VotingProxyTest is Test {
         vm.expectRevert(abi.encodeWithSelector(UnauthorizedAccount.selector, stranger));
 
         vm.prank(stranger);
-        proxy.vote(voteHash);
+        proxy.vote(voteHash, data);
     }
 
     function testOwnerAndSourceAreImmutableAndOwnerManagementAbiIsAbsent() public {
@@ -93,10 +110,10 @@ contract VotingProxyTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(UnauthorizedAccount.selector, newOwner));
         vm.prank(newOwner);
-        proxy.vote(voteHash);
+        proxy.vote(voteHash, data);
 
         vm.prank(source);
-        proxy.vote(voteHash);
+        proxy.vote(voteHash, data);
 
         assertEq(proxy.isValidSignature(voteHash, hex""), ERC1271_MAGIC_VALUE);
     }

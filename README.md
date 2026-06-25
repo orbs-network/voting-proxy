@@ -3,14 +3,14 @@
 Generic ERC-1271 voting proxy for Snapshot voting without moving voting power.
 
 For older multisigs that cannot upgrade to ERC-1271 or move their voting power,
-`VotingProxy` lets the multisig approve exact vote hashes through a small
-companion contract.
+`VotingProxy` lets the multisig approve exact vote hashes and recover the
+associated data through a small companion contract.
 
 Snapshot Score API strategy PR: https://github.com/snapshot-labs/score-api/pull/1452
 
 ## ✨ What
 
-1. 🔐 A multisig approves an exact Snapshot vote hash onchain.
+1. 🔐 A multisig approves an exact Snapshot vote hash and associated data onchain.
 2. 🧾 `VotingProxy` exposes ERC-1271 `isValidSignature`.
 3. 🧮 A Snapshot `voting-proxy` strategy maps proxy voting power to `source()`.
 4. 📬 Snapshot counts the proxy vote with the owner's configured voting power.
@@ -19,11 +19,12 @@ Snapshot Score API strategy PR: https://github.com/snapshot-labs/score-api/pull/
 
 ```solidity
 interface IVotingProxy {
-    event Vote(bytes32 indexed hash);
+    event Vote(bytes32 indexed hash, bytes data);
 
     function owner() external view returns (address);
     function source() external view returns (address);
-    function vote(bytes32 hash) external;
+    function votes(bytes32 hash) external view returns (bytes memory data);
+    function vote(bytes32 hash, bytes calldata data) external;
     function isValidSignature(bytes32 hash, bytes calldata sig) external view returns (bytes4);
 }
 ```
@@ -32,10 +33,13 @@ Minimal behavior:
 
 1. `owner` is immutable and set in the constructor.
 2. `source()` returns `owner`.
-3. `vote(hash)` is callable only by `owner`.
+3. `vote(hash, data)` is callable only by `owner`.
 4. Ownership cannot be transferred or renounced.
-5. `isValidSignature(hash, 0x)` returns `0x1626ba7e` only if `hash` was approved.
-6. `vote(hash)` emits `Vote(hash)`.
+5. `data` must be non-empty.
+6. An approved hash cannot be replaced.
+7. `votes(hash)` returns the stored data bytes for retrieval.
+8. `isValidSignature(hash, 0x)` returns `0x1626ba7e` only if `votes(hash).length != 0`.
+9. `vote(hash, data)` emits `Vote(hash, data)`.
 
 ## 🔐 Roles
 
@@ -47,10 +51,11 @@ Minimal behavior:
 
 1. Create Snapshot vote typed data with `from = VotingProxy`.
 2. Compute the Snapshot EIP-712 hash.
-3. Owner approves `VotingProxy.vote(hash)` through its normal signing or multisig flow.
-4. Submit the vote with `address = VotingProxy` and `sig = "0x"`.
-5. Snapshot calls `isValidSignature(hash, 0x)`.
-6. Snapshot strategy gives `VotingProxy` the voting power of `source()`.
+3. Owner approves `VotingProxy.vote(hash, data)` through its normal signing or multisig flow.
+4. Later signers or submitters can read `votes(hash)` to recover the stored data.
+5. Submit the vote with `address = VotingProxy` and `sig = "0x"`.
+6. Snapshot calls `isValidSignature(hash, 0x)`.
+7. Snapshot strategy gives `VotingProxy` the voting power of `source()`.
 
 ## 🧮 Strategy
 
@@ -94,3 +99,4 @@ If multiple voters resolve to the same `source()`:
 2. Snapshot must treat the strategy as dependent on other addresses.
 3. The proxy must exist before the proposal snapshot block.
 4. The submitted Snapshot typed data must match the approved hash exactly.
+5. The contract stores data bytes for retrieval, but offchain tooling must verify those bytes match the approved hash.
