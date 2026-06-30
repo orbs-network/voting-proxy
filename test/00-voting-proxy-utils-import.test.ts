@@ -1,16 +1,26 @@
 import assert from 'node:assert/strict';
-import { rename } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { test } from 'node:test';
-
-import { strategy } from '../snapshot-strategies/voting-proxy/index.ts';
-
-const utilsPath = new URL('../utils.ts', import.meta.url);
-const hiddenUtilsPath = new URL('../utils.ts.hidden', import.meta.url);
+import { pathToFileURL } from 'node:url';
 
 test('propagates missing Score API utils imports', async () => {
-  await rename(utilsPath, hiddenUtilsPath);
+  const root = await mkdtemp(join(process.cwd(), 'tmp-voting-proxy-missing-utils-'));
 
   try {
+    const strategyDir = join(root, 'snapshot-strategies', 'voting-proxy');
+    await mkdir(strategyDir, { recursive: true });
+    await copyFile(
+      new URL('../snapshot-strategies/voting-proxy/index.ts', import.meta.url),
+      join(strategyDir, 'index.ts')
+    );
+    await copyFile(
+      new URL('../snapshot-strategies/voting-proxy/proxyScoring.ts', import.meta.url),
+      join(strategyDir, 'proxyScoring.ts')
+    );
+
+    const { strategy } = await import(pathToFileURL(join(strategyDir, 'index.ts')).href);
+
     await assert.rejects(
       () =>
         strategy(
@@ -30,6 +40,6 @@ test('propagates missing Score API utils imports', async () => {
         error.code === 'ERR_MODULE_NOT_FOUND'
     );
   } finally {
-    await rename(hiddenUtilsPath, utilsPath);
+    await rm(root, { recursive: true, force: true });
   }
 });
