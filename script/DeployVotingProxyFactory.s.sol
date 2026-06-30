@@ -5,11 +5,11 @@ import {Script} from "forge-std/Script.sol";
 import {VotingProxyFactory} from "../src/VotingProxyFactory.sol";
 
 contract DeployVotingProxyFactory is Script {
-    function run() external returns (VotingProxyFactory factory) {
-        bytes32 salt = vm.envOr("SALT", bytes32(0));
+    bytes32 private constant SALT = 0x004b79d8019e02a7f432b2c87f0316a4da575e388066f977fd1423972d6213a3;
 
+    function run() external returns (VotingProxyFactory factory) {
         vm.startBroadcast();
-        factory = new VotingProxyFactory{salt: salt}();
+        factory = new VotingProxyFactory{salt: SALT}();
         vm.stopBroadcast();
     }
 }
