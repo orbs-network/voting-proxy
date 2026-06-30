@@ -27,7 +27,6 @@ contract DeployVotingProxyFactoryTest is Test {
         VotingProxy proxy = factory.create();
 
         assertEq(proxy.owner(), source);
-        assertEq(proxy.source(), source);
         assertEq(factory.source(address(proxy)), source);
     }
 }

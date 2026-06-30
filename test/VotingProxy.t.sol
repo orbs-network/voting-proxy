@@ -11,6 +11,7 @@ contract VotingProxyTest is Test {
     bytes4 private constant ACCEPT_OWNERSHIP_SELECTOR = bytes4(keccak256("acceptOwnership()"));
     bytes4 private constant RENOUNCE_OWNERSHIP_SELECTOR = bytes4(keccak256("renounceOwnership()"));
     bytes4 private constant PENDING_OWNER_SELECTOR = bytes4(keccak256("pendingOwner()"));
+    bytes4 private constant SOURCE_SELECTOR = bytes4(keccak256("source()"));
 
     address private source = makeAddr("source");
     address private newOwner = makeAddr("newOwner");
@@ -33,9 +34,12 @@ contract VotingProxyTest is Test {
         proxy = new VotingProxy(source);
     }
 
-    function testSetsInitialOwnerAndSource() public view {
+    function testSetsInitialOwner() public view {
         assertEq(proxy.owner(), source);
-        assertEq(proxy.source(), source);
+    }
+
+    function testSourceAbiIsAbsent() public {
+        assertSelectorRevertsFrom(stranger, abi.encodeWithSelector(SOURCE_SELECTOR));
     }
 
     function testRejectsZeroInitialOwner() public {
@@ -92,9 +96,8 @@ contract VotingProxyTest is Test {
         proxy.vote(voteHash, data);
     }
 
-    function testOwnerAndSourceAreImmutableAndOwnerManagementAbiIsAbsent() public {
+    function testOwnerIsImmutableAndOwnerManagementAbiIsAbsent() public {
         assertEq(proxy.owner(), source);
-        assertEq(proxy.source(), source);
 
         assertSelectorRevertsFrom(source, abi.encodeWithSelector(TRANSFER_OWNERSHIP_SELECTOR, newOwner));
         assertSelectorRevertsFrom(newOwner, abi.encodeWithSelector(ACCEPT_OWNERSHIP_SELECTOR));
@@ -102,7 +105,6 @@ contract VotingProxyTest is Test {
         assertSelectorRevertsFrom(stranger, abi.encodeWithSelector(PENDING_OWNER_SELECTOR));
 
         assertEq(proxy.owner(), source);
-        assertEq(proxy.source(), source);
     }
 
     function testOnlyImmutableOwnerCanApproveVoteHash() public {

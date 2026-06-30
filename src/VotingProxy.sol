@@ -6,13 +6,12 @@ interface IVotingProxy {
     event Vote(bytes32 indexed hash, bytes data);
 
     function owner() external view returns (address);
-    function source() external view returns (address);
     function votes(bytes32 hash) external view returns (bytes memory data);
     function vote(bytes32 hash, bytes calldata data) external;
     function isValidSignature(bytes32 hash, bytes calldata sig) external view returns (bytes4 magicValue);
 }
 
-/// @notice ERC-1271 Snapshot voting proxy whose voting-power source is the immutable owner.
+/// @notice ERC-1271 Snapshot voting proxy controlled by an immutable owner.
 contract VotingProxy is IVotingProxy {
     bytes4 private constant ERC1271_MAGIC_VALUE = bytes4(keccak256("isValidSignature(bytes32,bytes)"));
     bytes4 private constant ERC1271_INVALID_VALUE = bytes4(type(uint32).max);
@@ -30,11 +29,6 @@ contract VotingProxy is IVotingProxy {
         if (owner_ == address(0)) revert InvalidOwner(owner_);
 
         owner = owner_;
-    }
-
-    /// @notice Account whose voting power should be used.
-    function source() external view returns (address) {
-        return owner;
     }
 
     function vote(bytes32 hash, bytes calldata data) external {

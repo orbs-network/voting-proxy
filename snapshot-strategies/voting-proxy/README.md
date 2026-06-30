@@ -9,7 +9,8 @@ batch-calls `factory.source(proxy)`, scores the returned source address with the
 configured inner strategies, and returns that voting power under the original
 proxy voter.
 
-Score API PR: https://github.com/snapshot-labs/score-api/pull/1452
+Snapshot strategy: https://github.com/snapshot-labs/score-api/tree/master/src/strategies/strategies/voting-proxy
+Merged in PR: https://github.com/snapshot-labs/score-api/pull/1452
 
 This strategy only honors sources returned by the configured factory. It does
 not validate ERC-1271 signatures itself, so use it with Snapshot signature

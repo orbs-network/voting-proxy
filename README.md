@@ -6,7 +6,8 @@ For older multisigs that cannot upgrade to ERC-1271 or move their voting power,
 `VotingProxy` lets the multisig approve exact vote hashes and recover the
 associated data through a small companion contract.
 
-Snapshot Score API strategy PR: https://github.com/snapshot-labs/score-api/pull/1452
+Snapshot strategy: https://github.com/snapshot-labs/score-api/tree/master/src/strategies/strategies/voting-proxy
+Merged in PR: https://github.com/snapshot-labs/score-api/pull/1452
 
 ## ✨ What
 
@@ -23,7 +24,6 @@ interface IVotingProxy {
     event Vote(bytes32 indexed hash, bytes data);
 
     function owner() external view returns (address);
-    function source() external view returns (address);
     function votes(bytes32 hash) external view returns (bytes memory data);
     function vote(bytes32 hash, bytes calldata data) external;
     function isValidSignature(bytes32 hash, bytes calldata sig) external view returns (bytes4);
@@ -33,19 +33,18 @@ interface IVotingProxy {
 Minimal behavior:
 
 1. `owner` is immutable and set in the constructor.
-2. `source()` returns `owner`.
-3. `vote(hash, data)` is callable only by `owner`.
-4. Ownership cannot be transferred or renounced.
-5. `data` must be non-empty.
-6. An approved hash cannot be replaced.
-7. `votes(hash)` returns the stored data bytes for retrieval.
-8. `isValidSignature(hash, 0x)` returns `0x1626ba7e` only if `votes(hash).length != 0`.
-9. `vote(hash, data)` emits `Vote(hash, data)`.
+2. `vote(hash, data)` is callable only by `owner`.
+3. Ownership cannot be transferred or renounced.
+4. `data` must be non-empty.
+5. An approved hash cannot be replaced.
+6. `votes(hash)` returns the stored data bytes for retrieval.
+7. `isValidSignature(hash, 0x)` returns `0x1626ba7e` only if `votes(hash).length != 0`.
+8. `vote(hash, data)` emits `Vote(hash, data)`.
 
 ## 🔐 Roles
 
 1. `owner` approves vote hashes.
-2. `owner` provides voting power through `source()`.
+2. The factory records the voting-power source for each created proxy.
 3. The constructor `owner` argument sets the only owner.
 4. `VotingProxyFactory.create()` deploys a proxy for `msg.sender`.
 5. `VotingProxyFactory.source(proxy)` returns the registered source for factory-created proxies.
@@ -91,7 +90,7 @@ Example:
 
 ## ⚖️ Dedup
 
-If multiple voters resolve to the same `source()`:
+If multiple voters resolve to the same factory source:
 
 1. Direct source voter wins if it has positive voting power.
 2. Otherwise the lowest proxy address wins deterministically.

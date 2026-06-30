@@ -25,7 +25,6 @@ contract VotingProxyFactoryTest is Test {
 
         assertEq(address(proxy).code.length > 0, true);
         assertEq(proxy.owner(), owner);
-        assertEq(proxy.source(), owner);
         assertEq(factory.source(address(proxy)), owner);
     }
 }
